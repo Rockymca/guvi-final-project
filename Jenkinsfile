@@ -2,43 +2,42 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')
         IMAGE_NAME = "rakeshvar/dev"
-        PROD_IMAGE = "rakeshvar/prod"
+        PROD_IMAGE_NAME = "rakeshvar/prod"
+        DOCKER_CREDENTIALS = "dockerhub-creds"  // Add your DockerHub creds to Jenkins
     }
 
     stages {
-        stage('Clone Repo') {
+        stage('Clone Repository') {
             steps {
-                git branch: 'dev', url: 'https://github.com/Rockymca/guvi-devops-project.git'
+                echo "Cloning branch: ${env.BRANCH_NAME}"
+                checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $IMAGE_NAME .'
-            }
-        }
-
-        stage('Push to Dev') {
-            steps {
-                withDockerRegistry([credentialsId: "$DOCKERHUB_CREDENTIALS", url: '']) {
-                    sh 'docker push $IMAGE_NAME'
+                script {
+                    if (env.BRANCH_NAME == 'dev') {
+                        sh 'docker build -t $IMAGE_NAME .'
+                    } else if (env.BRANCH_NAME == 'master') {
+                        sh 'docker build -t $PROD_IMAGE_NAME .'
+                    }
                 }
             }
         }
 
-        stage('Manual Approval') {
+        stage('Push Docker Image') {
             steps {
-                input message: 'Push to prod?'
-            }
-        }
-
-        stage('Push to Prod') {
-            steps {
-                withDockerRegistry([credentialsId: "$DOCKERHUB_CREDENTIALS", url: '']) {
-                    sh 'docker tag $IMAGE_NAME $PROD_IMAGE'
-                    sh 'docker push $PROD_IMAGE'
+                withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    script {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                        if (env.BRANCH_NAME == 'dev') {
+                            sh 'docker push $IMAGE_NAME'
+                        } else if (env.BRANCH_NAME == 'master') {
+                            sh 'docker push $PROD_IMAGE_NAME'
+                        }
+                    }
                 }
             }
         }
